@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Lado Naa! - Caricature Fight</title>
+    <title>Lado Naa! - Stress Relief</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Bangers&family=Roboto:wght@400;700&display=swap');
@@ -83,7 +83,9 @@
     <!-- SCREEN 1: WELCOME -->
     <div id="screen-welcome" class="screen">
         <h1 class="text-6xl text-red-500 mb-2 animate-bounce text-center">LADO NAA!</h1>
-        <p class="text-xl text-gray-300 mb-8 text-center">Caricature Fight Club</p>
+        <p class="text-2xl text-gray-200 mb-1 text-center font-bold">Stress Relieving Game</p>
+        <p class="text-xl text-yellow-500 mb-8 text-center italic">"Gussa nikalo jisspar bhi aara"</p>
+        
         <button onclick="goToHeroSetup()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-8 rounded-full text-2xl shadow-lg pulse-red transform transition hover:scale-105">
             START
         </button>
@@ -187,6 +189,11 @@
                 <div id="score-display" class="text-white font-mono text-3xl font-bold">0</div>
             </div>
         </div>
+
+        <!-- END GAME BUTTON -->
+        <button onclick="quitGame()" class="absolute bottom-6 right-6 bg-red-900 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg border border-red-500 pointer-events-auto shadow-lg z-30">
+            END GAME 🏠
+        </button>
         
         <!-- Floating Text Container -->
         <div id="floating-text-container"></div>
@@ -200,9 +207,14 @@
             <p id="final-score" class="text-6xl font-bold text-yellow-400 my-2">0</p>
             <p class="text-gray-300">Enemies Smashed: <span id="final-enemies" class="text-white font-bold">0</span></p>
         </div>
-        <button onclick="location.reload()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full text-xl">
-            Play Again
-        </button>
+        <div class="flex gap-4">
+            <button onclick="quitGame()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-full text-xl">
+                Home
+            </button>
+            <button onclick="startGame()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full text-xl">
+                Play Again
+            </button>
+        </div>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -212,13 +224,13 @@
         
         const state = {
             screen: 'welcome',
-            hero: { imgData: null, name: 'Hero' }, // Will hold base64 of cropped face
-            enemiesList: [], // Array of {imgData, name}
+            // We now store the actual Image Object, not just the text data
+            hero: { imgObject: null, name: 'Hero' }, 
+            enemiesList: [], // Array of {imgObject, name}
             
             // Temporary state for the cropper currently being used
             crop: {
                 type: null, // 'hero' or 'enemy'
-                img: null,  // The source DOM image element
                 x: 0, y: 0, // Pan coordinates
                 zoom: 1,    // Zoom level
                 startX: 0, startY: 0, dragging: false
@@ -244,19 +256,38 @@
         
         function showScreen(id) {
             document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-            document.getElementById(id).classList.remove('hidden');
+            // Check if ID exists before trying to access it
+            const screen = document.getElementById(id);
+            if (screen) {
+                screen.classList.remove('hidden');
+            }
         }
 
         function goToHeroSetup() { showScreen('screen-hero'); }
+        
+        function quitGame() {
+            state.game.active = false;
+            document.getElementById('game-ui').classList.add('hidden');
+            showScreen('screen-welcome');
+        }
 
         function saveHeroAndNext() {
             const name = document.getElementById('hero-name').value || "Hero";
-            if (!document.getElementById('hero-source-img').src) {
+            const imgEl = document.getElementById('hero-source-img');
+            
+            // Check if an image is actually loaded in the DOM element
+            if (!imgEl.src || imgEl.classList.contains('hidden')) {
                 alert("Please upload a photo first!");
                 return;
             }
-            // Capture the cropped face immediately
-            state.hero.imgData = captureCrop('hero'); 
+
+            // 1. Capture data
+            const dataUrl = captureCrop('hero'); 
+            
+            // 2. Create persistent Image Object immediately
+            const finalImg = new Image();
+            finalImg.src = dataUrl;
+            state.hero.imgObject = finalImg;
             state.hero.name = name;
             
             // Reset cropper for enemy screen
@@ -274,9 +305,8 @@
             initGame();
         }
 
-        /* ---------------- CROPPER ENGINE (IMPROVED) ---------------- */
+        /* ---------------- CROPPER ENGINE ---------------- */
         
-        // Initialize or reset cropper for a specific screen
         function resetCropperUI(type) {
             state.crop.type = type;
             state.crop.x = 0; 
@@ -284,9 +314,10 @@
             state.crop.zoom = 1;
             
             document.getElementById(`${type}-zoom`).value = 1;
-            document.getElementById(`${type}-source-img`).style.transform = `translate(0px, 0px) scale(1)`;
-            document.getElementById(`${type}-source-img`).src = "";
-            document.getElementById(`${type}-source-img`).classList.add('hidden');
+            const img = document.getElementById(`${type}-source-img`);
+            img.style.transform = `translate(0px, 0px) scale(1)`;
+            img.src = "";
+            img.classList.add('hidden');
             document.getElementById(`${type}-placeholder`).classList.remove('hidden');
         }
 
@@ -298,33 +329,18 @@
             reader.onload = (event) => {
                 const img = document.getElementById(`${type}-source-img`);
                 img.onload = () => {
-                    // Auto-center Logic:
-                    // 1. Get container dimensions
                     const container = document.getElementById(`${type}-crop-area`);
                     const cRect = container.getBoundingClientRect();
                     
-                    // 2. Center image in container conceptually
-                    // We want (imgWidth * zoom)/2 to align with (containerWidth)/2
-                    // Initial load: zoom=1. 
-                    // Just center the natural image.
-                    
-                    // Actually, simple CSS centering is hard with drag. 
-                    // Let's set initial X/Y to center the image.
-                    const imgW = img.naturalWidth; // Using natural dimensions for calculation logic usually safer, but let's use rendered
-                    // Because the image is absolute, we start at 0,0 top-left.
-                    
-                    // Let's just default to 0,0 (top-left) but suggest the user move it.
-                    // Or better: Pre-calculate center.
-                    // We will rely on user dragging for simplicity, but set Zoom such that image covers circle.
-                    
+                    // Set initial zoom to fit
                     let initialZoom = 1;
                     if(img.naturalWidth < cRect.width || img.naturalHeight < cRect.height) {
                         initialZoom = Math.max(cRect.width/img.naturalWidth, cRect.height/img.naturalHeight);
                     }
                     
                     state.crop.type = type;
-                    state.crop.x = (cRect.width - img.naturalWidth) / 2; // Center horizontally
-                    state.crop.y = (cRect.height - img.naturalHeight) / 2; // Center vertically
+                    state.crop.x = (cRect.width - img.naturalWidth) / 2;
+                    state.crop.y = (cRect.height - img.naturalHeight) / 2;
                     state.crop.zoom = initialZoom;
 
                     document.getElementById(`${type}-zoom`).value = initialZoom;
@@ -370,49 +386,30 @@
 
         function applyTransform(type) {
             const img = document.getElementById(`${type}-source-img`);
-            // Translate moves the element, Scale zooms it. 
-            // Transform origin is 'center', so scaling expands from center of image.
-            // However, our drag logic moves the top-left corner.
-            // To make this WYSIWYG, we rely on CSS transform.
-            
-            // We use pixel translation.
             img.style.transform = `translate(${state.crop.x}px, ${state.crop.y}px) scale(${state.crop.zoom})`;
         }
 
-        /**
-         * This is the critical fix.
-         * We essentially take a "screenshot" of the div exactly as it appears.
-         */
         function captureCrop(type) {
             const container = document.getElementById(`${type}-crop-area`);
             const img = document.getElementById(`${type}-source-img`);
             
-            // Get the exact screen positions
             const cRect = container.getBoundingClientRect();
             const iRect = img.getBoundingClientRect();
 
-            // Create a canvas equal to the desired output size (high res)
             const outputSize = 200;
             const cvs = document.createElement('canvas');
             cvs.width = outputSize;
             cvs.height = outputSize;
             const c = cvs.getContext('2d');
 
-            // Create circular mask
             c.beginPath();
             c.arc(outputSize/2, outputSize/2, outputSize/2, 0, Math.PI*2);
             c.clip();
 
-            // Draw background color (skin tone fallback) just in case
             c.fillStyle = "#fca";
             c.fillRect(0,0, outputSize, outputSize);
-
-            // Calculate mapping:
-            // The image at iRect needs to be drawn onto the canvas representing cRect.
-            // We map the relative position of the image inside the container.
             
-            const scaleFactor = outputSize / cRect.width; // Scaling from DOM pixels to Canvas pixels
-
+            const scaleFactor = outputSize / cRect.width; 
             const relativeX = (iRect.left - cRect.left) * scaleFactor;
             const relativeY = (iRect.top - cRect.top) * scaleFactor;
             const relativeW = iRect.width * scaleFactor;
@@ -429,11 +426,16 @@
             if (imgEl.classList.contains('hidden')) return alert("Upload an enemy photo first!");
             
             const name = document.getElementById('enemy-name').value || "Enemy";
-            const imgData = captureCrop('enemy');
+            const dataUrl = captureCrop('enemy');
             
-            state.enemiesList.push({ name, imgData });
+            // Create Persistent Object
+            const finalImg = new Image();
+            finalImg.src = dataUrl;
+
+            state.enemiesList.push({ name: name, imgObject: finalImg });
+            
             renderEnemyList();
-            resetCropperUI('enemy'); // Clear for next
+            resetCropperUI('enemy'); 
             
             document.getElementById('start-game-btn').classList.remove('hidden');
         }
@@ -443,15 +445,15 @@
             const empty = document.getElementById('empty-msg');
             if(state.enemiesList.length > 0) empty.style.display = 'none';
             
-            // Re-render last added only? No, rebuild list (simple)
             list.innerHTML = '';
             if(state.enemiesList.length === 0) list.appendChild(empty);
 
             state.enemiesList.forEach((en, idx) => {
                 const div = document.createElement('div');
                 div.className = "relative w-20 h-24 flex flex-col items-center bg-black rounded p-1 border border-gray-700";
+                // Note: en.imgObject.src is the base64 string, so we can use it for UI preview
                 div.innerHTML = `
-                    <img src="${en.imgData}" class="w-16 h-16 rounded-full border border-red-500 object-cover">
+                    <img src="${en.imgObject.src}" class="w-16 h-16 rounded-full border border-red-500 object-cover">
                     <span class="text-[10px] text-white mt-1 truncate w-full text-center">${en.name}</span>
                     <button onclick="removeEnemy(${idx})" class="absolute -top-2 -right-2 bg-red-600 rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
                 `;
@@ -488,23 +490,23 @@
         }
         window.addEventListener('resize', resize);
 
-        // --- Caricature Drawing Helper ---
-        function drawCaricature(ctx, x, y, img, isHero) {
-            const headSize = isHero ? 50 : 40; // Radius
+        function drawCaricature(ctx, x, y, imgObject, isHero) {
+            // If image isn't loaded yet, don't crash
+            if (!imgObject || !imgObject.complete || imgObject.naturalWidth === 0) return;
+
+            const headSize = isHero ? 50 : 40; 
             const bodyW = headSize * 0.8;
             const bodyH = headSize * 0.8;
 
             ctx.save();
             ctx.translate(x, y);
 
-            // 1. Draw Body (Small rectangle + rounded shoulders)
-            // Bobbing animation
+            // Body Bobbing
             const bounce = Math.sin(Date.now() / 150) * 3;
-            
-            ctx.translate(0, headSize * 0.8 + bounce); // Move down to neck position
+            ctx.translate(0, headSize * 0.8 + bounce);
 
-            ctx.fillStyle = isHero ? "#3b82f6" : "#ef4444"; // Blue shirt for hero, Red for enemy
-            // Shirt
+            // Draw Body
+            ctx.fillStyle = isHero ? "#3b82f6" : "#ef4444"; 
             ctx.beginPath();
             ctx.moveTo(-bodyW/2, 0);
             ctx.lineTo(bodyW/2, 0);
@@ -512,42 +514,40 @@
             ctx.lineTo(-bodyW/2 + 5, bodyH);
             ctx.fill();
             
-            // Pants (Black)
+            // Pants
             ctx.fillStyle = "#111";
             ctx.fillRect(-bodyW/3, bodyH, bodyW/1.5, bodyH/2);
 
-            // Arms (Simple circles for fists)
-            ctx.fillStyle = "#fca"; // Skin
-            // Left fist
+            // Fists
+            ctx.fillStyle = "#fca"; 
             ctx.beginPath();
             ctx.arc(-bodyW/2 - 5, bodyH/2 + Math.sin(Date.now()/100)*5, 8, 0, Math.PI*2);
             ctx.fill();
-            // Right fist
             ctx.beginPath();
             ctx.arc(bodyW/2 + 5, bodyH/2 - Math.sin(Date.now()/100)*5, 8, 0, Math.PI*2);
             ctx.fill();
 
             ctx.restore();
 
-            // 2. Draw BIG HEAD (The cropped image)
+            // HEAD
             ctx.save();
             ctx.translate(x, y);
-            // Add slight wobble to head
             const wobble = Math.sin(Date.now() / 300) * 0.1;
             ctx.rotate(wobble);
 
+            // Circular Clipping Path
             ctx.beginPath();
             ctx.arc(0, 0, headSize, 0, Math.PI*2);
             ctx.closePath();
             
-            // Shadow behind head
             ctx.shadowColor = 'rgba(0,0,0,0.5)';
             ctx.shadowBlur = 10;
             
             ctx.save();
-            ctx.clip(); // Clip strictly to circle
-            ctx.drawImage(img, -headSize, -headSize, headSize*2, headSize*2);
-            ctx.restore(); // Restore clip
+            ctx.clip(); 
+            // Draw the pre-loaded image object
+            ctx.drawImage(imgObject, -headSize, -headSize, headSize*2, headSize*2);
+            ctx.restore(); 
             
             // Border
             ctx.strokeStyle = isHero ? '#60a5fa' : '#f87171';
@@ -571,16 +571,14 @@
                 state.game.difficulty += 0.05;
             }
 
-            // 1. Draw Hero (Always in Center)
-            const heroImg = new Image();
-            heroImg.src = state.hero.imgData;
-            if(state.hero.imgData) {
-                drawCaricature(ctx, canvas.width/2, canvas.height/2, heroImg, true);
+            // 1. Draw Hero
+            // CRITICAL FIX: Use the persistent imgObject from state
+            if(state.hero.imgObject) {
+                drawCaricature(ctx, canvas.width/2, canvas.height/2, state.hero.imgObject, true);
             }
 
             // 2. Process Enemies
             state.game.entities.forEach((en, i) => {
-                // Move towards center
                 const dx = (canvas.width/2) - en.x;
                 const dy = (canvas.height/2) - en.y;
                 const angle = Math.atan2(dy, dx);
@@ -588,21 +586,20 @@
                 en.x += Math.cos(angle) * en.speed;
                 en.y += Math.sin(angle) * en.speed;
 
-                // Draw Enemy Caricature
-                const enImg = new Image();
-                enImg.src = en.imgData;
-                drawCaricature(ctx, en.x, en.y, enImg, false);
+                // Draw Enemy
+                // CRITICAL FIX: Use the persistent imgObject from entity
+                drawCaricature(ctx, en.x, en.y, en.imgObject, false);
 
-                // Collision with Hero (Game Over condition logic)
+                // Collision with Hero
                 const dist = Math.hypot(dx, dy);
-                if (dist < 80) { // Touch radius
+                if (dist < 80) { 
                     takeDamage(10);
-                    killEnemy(i, false); // Remove enemy, no score
+                    killEnemy(i, false); 
                     createExplosion(en.x, en.y, "#ef4444");
                 }
             });
 
-            // 3. Process Particles
+            // 3. Particles
             for (let i = state.game.particles.length - 1; i >= 0; i--) {
                 const p = state.game.particles[i];
                 p.x += p.vx;
@@ -621,26 +618,25 @@
         }
 
         function spawnEnemy() {
-            // Pick random side
             const side = Math.floor(Math.random() * 4);
             let x, y;
             const pad = 60;
-            if (side === 0) { x = Math.random() * canvas.width; y = -pad; } // Top
-            else if (side === 1) { x = canvas.width + pad; y = Math.random() * canvas.height; } // Right
-            else if (side === 2) { x = Math.random() * canvas.width; y = canvas.height + pad; } // Bottom
-            else { x = -pad; y = Math.random() * canvas.height; } // Left
+            if (side === 0) { x = Math.random() * canvas.width; y = -pad; }
+            else if (side === 1) { x = canvas.width + pad; y = Math.random() * canvas.height; }
+            else if (side === 2) { x = Math.random() * canvas.width; y = canvas.height + pad; }
+            else { x = -pad; y = Math.random() * canvas.height; }
 
             // Pick random enemy data
             const data = state.enemiesList[Math.floor(Math.random() * state.enemiesList.length)];
 
             state.game.entities.push({
                 x, y,
-                imgData: data.imgData,
+                imgObject: data.imgObject, // Pass the loaded image object
                 speed: (Math.random() * 1 + 0.5) * state.game.difficulty
             });
         }
 
-        // --- Interaction (Tap to fight) ---
+        // --- Interaction ---
         canvas.addEventListener('mousedown', handleTap);
         canvas.addEventListener('touchstart', (e) => {
             e.preventDefault(); 
@@ -654,24 +650,19 @@
             const tx = (e.clientX || e.pageX) - rect.left;
             const ty = (e.clientY || e.pageY) - rect.top;
 
-            // Check hits
             let hit = false;
             for (let i = state.game.entities.length - 1; i >= 0; i--) {
                 const en = state.game.entities[i];
-                // Hitbox is the head radius roughly (40px) + padding
                 if (Math.hypot(en.x - tx, en.y - ty) < 60) {
                     killEnemy(i, true);
                     hit = true;
-                    createExplosion(tx, ty, "#fff"); // Hit spark
+                    createExplosion(tx, ty, "#fff");
                     playSound('punch');
-                    break; // One tap = one kill
+                    break; 
                 }
             }
 
-            if (!hit) {
-                // Miss effect
-                createExplosion(tx, ty, "rgba(255,255,255,0.1)");
-            }
+            if (!hit) createExplosion(tx, ty, "rgba(255,255,255,0.1)");
         }
 
         function killEnemy(index, byPlayer) {
@@ -689,7 +680,6 @@
             state.game.health -= amt;
             updateHealthUI();
             
-            // Screen shake/flash
             const red = document.createElement('div');
             red.className = "absolute inset-0 bg-red-600 opacity-40 pointer-events-none";
             document.body.appendChild(red);
@@ -697,9 +687,7 @@
             
             playSound('hit');
 
-            if (state.game.health <= 0) {
-                gameOver();
-            }
+            if (state.game.health <= 0) gameOver();
         }
 
         function updateHealthUI() {
