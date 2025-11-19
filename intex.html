@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lado Naa! - Caricature Fight</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Bangers&family=Roboto:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+        }
+
+        h1, h2, .game-font {
+            font-family: 'Bangers', cursive;
+            letter-spacing: 2px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #333; }
+        ::-webkit-scrollbar-thumb { background: #ef4444; border-radius: 3px; }
+
+        /* Animations */
+        .pulse-red { animation: pulse-red 2s infinite; }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        /* Cropper UI - The Circle Mask */
+        .crop-wrapper {
+            position: relative;
+            overflow: hidden;
+            border-radius: 50%;
+            border: 4px solid #3b82f6; /* Blue for Hero */
+            background: #333;
+            cursor: move;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        
+        /* For Enemy, override border color */
+        .enemy-border {
+            border-color: #ef4444;
+        }
+
+        .crop-wrapper img {
+            position: absolute;
+            max-width: none; /* Allow zooming beyond container */
+            transform-origin: center;
+            pointer-events: none; /* Let clicks pass to container */
+        }
+
+        /* Game Canvas */
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+            background: radial-gradient(circle, #2a2a2a 0%, #111 100%);
+        }
+
+        .screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 10;
+            background: rgba(0,0,0,0.95);
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <!-- SCREEN 1: WELCOME -->
+    <div id="screen-welcome" class="screen">
+        <h1 class="text-6xl text-red-500 mb-2 animate-bounce text-center">LADO NAA!</h1>
+        <p class="text-xl text-gray-300 mb-8 text-center">Caricature Fight Club</p>
+        <button onclick="goToHeroSetup()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-8 rounded-full text-2xl shadow-lg pulse-red transform transition hover:scale-105">
+            START
+        </button>
+    </div>
+
+    <!-- SCREEN 2: HERO SETUP -->
+    <div id="screen-hero" class="screen hidden p-4">
+        <h2 class="text-4xl text-blue-400 mb-2 text-center">Create Hero</h2>
+        <p class="text-sm text-gray-400 mb-4 text-center">Upload & Position Face in Circle</p>
+        
+        <!-- Hero Cropper (200x200) -->
+        <div class="crop-wrapper mb-4" id="hero-crop-area" style="width: 200px; height: 200px;" 
+             onmousedown="startDrag(event, 'hero')" ontouchstart="startDrag(event, 'hero')">
+            <img id="hero-source-img" src="" class="hidden">
+            <div id="hero-placeholder" class="w-full h-full flex flex-col items-center justify-center text-gray-500">
+                <span class="text-3xl">📷</span>
+                <span class="text-xs mt-2">Upload Photo</span>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="w-64 mb-4 bg-gray-800 p-3 rounded-lg">
+            <div class="flex justify-between text-xs mb-1"><span>Zoom Out</span><span>Zoom In</span></div>
+            <input type="range" id="hero-zoom" min="0.2" max="3" step="0.05" value="1" class="w-full accent-blue-500" oninput="updateZoom('hero')">
+        </div>
+
+        <div class="flex gap-2 mb-4">
+            <input type="file" id="hero-upload" accept="image/*" class="hidden" onchange="handleImageUpload(event, 'hero')">
+            <button onclick="document.getElementById('hero-upload').click()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500 font-bold">
+                📂 Select Photo
+            </button>
+        </div>
+
+        <input type="text" id="hero-name" placeholder="Hero Name" class="bg-gray-800 border border-gray-600 p-3 rounded text-center text-xl mb-6 w-64 focus:border-blue-500 text-white">
+
+        <button onclick="saveHeroAndNext()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-10 rounded-full text-xl shadow-lg">
+            NEXT ➔
+        </button>
+    </div>
+
+    <!-- SCREEN 3: ENEMY SETUP -->
+    <div id="screen-enemy" class="screen hidden p-4">
+        <h2 class="text-4xl text-red-500 mb-2 text-center">Create Enemies</h2>
+        
+        <!-- Enemy Builder -->
+        <div class="bg-gray-900 p-4 rounded-xl border border-gray-700 mb-4 flex flex-col items-center w-full max-w-sm shadow-2xl">
+            
+            <!-- Enemy Cropper (120x120) -->
+            <div class="crop-wrapper enemy-border mb-3" id="enemy-crop-area" style="width: 150px; height: 150px;"
+                 onmousedown="startDrag(event, 'enemy')" ontouchstart="startDrag(event, 'enemy')">
+                <img id="enemy-source-img" src="" class="hidden">
+                <div id="enemy-placeholder" class="w-full h-full flex flex-col items-center justify-center text-gray-500">
+                    <span class="text-2xl">😈</span>
+                    <span class="text-xs">Enemy Photo</span>
+                </div>
+            </div>
+
+            <div class="w-full mb-3 px-4">
+                <input type="range" id="enemy-zoom" min="0.2" max="3" step="0.05" value="1" class="w-full accent-red-500" oninput="updateZoom('enemy')">
+            </div>
+
+            <div class="flex gap-2 w-full justify-center mb-3">
+                <input type="file" id="enemy-upload" accept="image/*" class="hidden" onchange="handleImageUpload(event, 'enemy')">
+                <button onclick="document.getElementById('enemy-upload').click()" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded text-sm flex-1">
+                    📂 Upload
+                </button>
+                <input type="text" id="enemy-name" placeholder="Name" class="bg-gray-800 border border-gray-600 p-2 rounded text-center w-32 text-white">
+            </div>
+
+            <button onclick="addEnemy()" class="bg-red-600 hover:bg-red-700 text-white w-full py-2 rounded-lg font-bold shadow">ADD TO FIGHT LIST +</button>
+        </div>
+
+        <!-- List -->
+        <div class="w-full max-w-sm bg-gray-800 rounded-lg p-2 mb-4 h-32 overflow-y-auto border border-gray-600">
+            <div id="enemy-list" class="flex flex-wrap gap-2 justify-center">
+                <p class="text-gray-500 text-sm mt-4 italic" id="empty-msg">No enemies added yet...</p>
+            </div>
+        </div>
+
+        <button onclick="startGame()" id="start-game-btn" class="hidden bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-12 rounded-full text-2xl shadow-lg animate-pulse">
+            START FIGHT!
+        </button>
+    </div>
+
+    <!-- GAME UI OVERLAY -->
+    <div id="game-ui" class="absolute top-0 left-0 w-full h-full pointer-events-none hidden z-20">
+        <!-- Health & Score Header -->
+        <div class="flex justify-between items-start p-4">
+            <!-- Hero Stats -->
+            <div class="flex items-center gap-2">
+                <div class="w-32">
+                    <div class="text-blue-400 font-bold game-font tracking-widest text-lg" id="ui-hero-name">HERO</div>
+                    <div class="h-4 bg-gray-800 rounded-full border border-gray-600 overflow-hidden">
+                        <div id="health-bar" class="h-full bg-green-500 w-full transition-all duration-200"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- Score -->
+            <div class="text-right">
+                <div class="text-yellow-400 font-bold game-font text-2xl">SCORE</div>
+                <div id="score-display" class="text-white font-mono text-3xl font-bold">0</div>
+            </div>
+        </div>
+        
+        <!-- Floating Text Container -->
+        <div id="floating-text-container"></div>
+    </div>
+
+    <!-- GAME OVER SCREEN -->
+    <div id="screen-gameover" class="screen hidden z-50">
+        <h2 class="text-6xl text-white mb-2 game-font">FINISHED!</h2>
+        <div class="bg-gray-800 p-8 rounded-2xl text-center border-2 border-yellow-500 shadow-2xl mb-6">
+            <p class="text-gray-400 uppercase text-sm tracking-widest">Total Frustration Released</p>
+            <p id="final-score" class="text-6xl font-bold text-yellow-400 my-2">0</p>
+            <p class="text-gray-300">Enemies Smashed: <span id="final-enemies" class="text-white font-bold">0</span></p>
+        </div>
+        <button onclick="location.reload()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full text-xl">
+            Play Again
+        </button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        /* ---------------- LOGIC & STATE ---------------- */
+        
+        const state = {
+            screen: 'welcome',
+            hero: { imgData: null, name: 'Hero' }, // Will hold base64 of cropped face
+            enemiesList: [], // Array of {imgData, name}
+            
+            // Temporary state for the cropper currently being used
+            crop: {
+                type: null, // 'hero' or 'enemy'
+                img: null,  // The source DOM image element
+                x: 0, y: 0, // Pan coordinates
+                zoom: 1,    // Zoom level
+                startX: 0, startY: 0, dragging: false
+            },
+
+            game: {
+                active: false,
+                score: 0,
+                health: 100,
+                entities: [], // Enemies + Hero(center)
+                particles: [],
+                lastSpawn: 0,
+                spawnRate: 2000,
+                difficulty: 1
+            }
+        };
+
+        // DOM shortcuts
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        /* ---------------- NAVIGATION ---------------- */
+        
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function goToHeroSetup() { showScreen('screen-hero'); }
+
+        function saveHeroAndNext() {
+            const name = document.getElementById('hero-name').value || "Hero";
+            if (!document.getElementById('hero-source-img').src) {
+                alert("Please upload a photo first!");
+                return;
+            }
+            // Capture the cropped face immediately
+            state.hero.imgData = captureCrop('hero'); 
+            state.hero.name = name;
+            
+            // Reset cropper for enemy screen
+            resetCropperUI('enemy');
+            showScreen('screen-enemy');
+        }
+
+        function startGame() {
+            if (state.enemiesList.length === 0) return alert("Add at least one enemy!");
+            
+            document.getElementById('game-ui').classList.remove('hidden');
+            document.getElementById('ui-hero-name').innerText = state.hero.name.toUpperCase();
+            showScreen('none'); // Hide all screens
+            
+            initGame();
+        }
+
+        /* ---------------- CROPPER ENGINE (IMPROVED) ---------------- */
+        
+        // Initialize or reset cropper for a specific screen
+        function resetCropperUI(type) {
+            state.crop.type = type;
+            state.crop.x = 0; 
+            state.crop.y = 0; 
+            state.crop.zoom = 1;
+            
+            document.getElementById(`${type}-zoom`).value = 1;
+            document.getElementById(`${type}-source-img`).style.transform = `translate(0px, 0px) scale(1)`;
+            document.getElementById(`${type}-source-img`).src = "";
+            document.getElementById(`${type}-source-img`).classList.add('hidden');
+            document.getElementById(`${type}-placeholder`).classList.remove('hidden');
+        }
+
+        function handleImageUpload(e, type) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = document.getElementById(`${type}-source-img`);
+                img.onload = () => {
+                    // Auto-center Logic:
+                    // 1. Get container dimensions
+                    const container = document.getElementById(`${type}-crop-area`);
+                    const cRect = container.getBoundingClientRect();
+                    
+                    // 2. Center image in container conceptually
+                    // We want (imgWidth * zoom)/2 to align with (containerWidth)/2
+                    // Initial load: zoom=1. 
+                    // Just center the natural image.
+                    
+                    // Actually, simple CSS centering is hard with drag. 
+                    // Let's set initial X/Y to center the image.
+                    const imgW = img.naturalWidth; // Using natural dimensions for calculation logic usually safer, but let's use rendered
+                    // Because the image is absolute, we start at 0,0 top-left.
+                    
+                    // Let's just default to 0,0 (top-left) but suggest the user move it.
+                    // Or better: Pre-calculate center.
+                    // We will rely on user dragging for simplicity, but set Zoom such that image covers circle.
+                    
+                    let initialZoom = 1;
+                    if(img.naturalWidth < cRect.width || img.naturalHeight < cRect.height) {
+                        initialZoom = Math.max(cRect.width/img.naturalWidth, cRect.height/img.naturalHeight);
+                    }
+                    
+                    state.crop.type = type;
+                    state.crop.x = (cRect.width - img.naturalWidth) / 2; // Center horizontally
+                    state.crop.y = (cRect.height - img.naturalHeight) / 2; // Center vertically
+                    state.crop.zoom = initialZoom;
+
+                    document.getElementById(`${type}-zoom`).value = initialZoom;
+                    
+                    img.classList.remove('hidden');
+                    document.getElementById(`${type}-placeholder`).classList.add('hidden');
+                    applyTransform(type);
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function startDrag(e, type) {
+            e.preventDefault();
+            state.crop.dragging = true;
+            state.crop.startX = (e.touches ? e.touches[0].clientX : e.clientX) - state.crop.x;
+            state.crop.startY = (e.touches ? e.touches[0].clientY : e.clientY) - state.crop.y;
+            state.crop.type = type;
+        }
+
+        window.addEventListener('mousemove', e => handleDrag(e, false));
+        window.addEventListener('touchmove', e => handleDrag(e, true), {passive:false});
+        window.addEventListener('mouseup', () => state.crop.dragging = false);
+        window.addEventListener('touchend', () => state.crop.dragging = false);
+
+        function handleDrag(e, isTouch) {
+            if (!state.crop.dragging) return;
+            if (isTouch) e.preventDefault();
+            
+            const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+            const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+
+            state.crop.x = clientX - state.crop.startX;
+            state.crop.y = clientY - state.crop.startY;
+            applyTransform(state.crop.type);
+        }
+
+        function updateZoom(type) {
+            state.crop.zoom = parseFloat(document.getElementById(`${type}-zoom`).value);
+            applyTransform(type);
+        }
+
+        function applyTransform(type) {
+            const img = document.getElementById(`${type}-source-img`);
+            // Translate moves the element, Scale zooms it. 
+            // Transform origin is 'center', so scaling expands from center of image.
+            // However, our drag logic moves the top-left corner.
+            // To make this WYSIWYG, we rely on CSS transform.
+            
+            // We use pixel translation.
+            img.style.transform = `translate(${state.crop.x}px, ${state.crop.y}px) scale(${state.crop.zoom})`;
+        }
+
+        /**
+         * This is the critical fix.
+         * We essentially take a "screenshot" of the div exactly as it appears.
+         */
+        function captureCrop(type) {
+            const container = document.getElementById(`${type}-crop-area`);
+            const img = document.getElementById(`${type}-source-img`);
+            
+            // Get the exact screen positions
+            const cRect = container.getBoundingClientRect();
+            const iRect = img.getBoundingClientRect();
+
+            // Create a canvas equal to the desired output size (high res)
+            const outputSize = 200;
+            const cvs = document.createElement('canvas');
+            cvs.width = outputSize;
+            cvs.height = outputSize;
+            const c = cvs.getContext('2d');
+
+            // Create circular mask
+            c.beginPath();
+            c.arc(outputSize/2, outputSize/2, outputSize/2, 0, Math.PI*2);
+            c.clip();
+
+            // Draw background color (skin tone fallback) just in case
+            c.fillStyle = "#fca";
+            c.fillRect(0,0, outputSize, outputSize);
+
+            // Calculate mapping:
+            // The image at iRect needs to be drawn onto the canvas representing cRect.
+            // We map the relative position of the image inside the container.
+            
+            const scaleFactor = outputSize / cRect.width; // Scaling from DOM pixels to Canvas pixels
+
+            const relativeX = (iRect.left - cRect.left) * scaleFactor;
+            const relativeY = (iRect.top - cRect.top) * scaleFactor;
+            const relativeW = iRect.width * scaleFactor;
+            const relativeH = iRect.height * scaleFactor;
+
+            c.drawImage(img, relativeX, relativeY, relativeW, relativeH);
+
+            return cvs.toDataURL();
+        }
+
+        // Enemy List Logic
+        function addEnemy() {
+            const imgEl = document.getElementById('enemy-source-img');
+            if (imgEl.classList.contains('hidden')) return alert("Upload an enemy photo first!");
+            
+            const name = document.getElementById('enemy-name').value || "Enemy";
+            const imgData = captureCrop('enemy');
+            
+            state.enemiesList.push({ name, imgData });
+            renderEnemyList();
+            resetCropperUI('enemy'); // Clear for next
+            
+            document.getElementById('start-game-btn').classList.remove('hidden');
+        }
+
+        function renderEnemyList() {
+            const list = document.getElementById('enemy-list');
+            const empty = document.getElementById('empty-msg');
+            if(state.enemiesList.length > 0) empty.style.display = 'none';
+            
+            // Re-render last added only? No, rebuild list (simple)
+            list.innerHTML = '';
+            if(state.enemiesList.length === 0) list.appendChild(empty);
+
+            state.enemiesList.forEach((en, idx) => {
+                const div = document.createElement('div');
+                div.className = "relative w-20 h-24 flex flex-col items-center bg-black rounded p-1 border border-gray-700";
+                div.innerHTML = `
+                    <img src="${en.imgData}" class="w-16 h-16 rounded-full border border-red-500 object-cover">
+                    <span class="text-[10px] text-white mt-1 truncate w-full text-center">${en.name}</span>
+                    <button onclick="removeEnemy(${idx})" class="absolute -top-2 -right-2 bg-red-600 rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function removeEnemy(idx) {
+            state.enemiesList.splice(idx, 1);
+            renderEnemyList();
+            if(state.enemiesList.length === 0) document.getElementById('start-game-btn').classList.add('hidden');
+        }
+
+
+        /* ---------------- GAMEPLAY ---------------- */
+
+        function initGame() {
+            resize();
+            state.game.active = true;
+            state.game.score = 0;
+            state.game.health = 100;
+            state.game.entities = [];
+            state.game.particles = [];
+            state.game.difficulty = 1;
+            state.game.spawnRate = 1500;
+
+            updateHealthUI();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+
+        // --- Caricature Drawing Helper ---
+        function drawCaricature(ctx, x, y, img, isHero) {
+            const headSize = isHero ? 50 : 40; // Radius
+            const bodyW = headSize * 0.8;
+            const bodyH = headSize * 0.8;
+
+            ctx.save();
+            ctx.translate(x, y);
+
+            // 1. Draw Body (Small rectangle + rounded shoulders)
+            // Bobbing animation
+            const bounce = Math.sin(Date.now() / 150) * 3;
+            
+            ctx.translate(0, headSize * 0.8 + bounce); // Move down to neck position
+
+            ctx.fillStyle = isHero ? "#3b82f6" : "#ef4444"; // Blue shirt for hero, Red for enemy
+            // Shirt
+            ctx.beginPath();
+            ctx.moveTo(-bodyW/2, 0);
+            ctx.lineTo(bodyW/2, 0);
+            ctx.lineTo(bodyW/2 - 5, bodyH);
+            ctx.lineTo(-bodyW/2 + 5, bodyH);
+            ctx.fill();
+            
+            // Pants (Black)
+            ctx.fillStyle = "#111";
+            ctx.fillRect(-bodyW/3, bodyH, bodyW/1.5, bodyH/2);
+
+            // Arms (Simple circles for fists)
+            ctx.fillStyle = "#fca"; // Skin
+            // Left fist
+            ctx.beginPath();
+            ctx.arc(-bodyW/2 - 5, bodyH/2 + Math.sin(Date.now()/100)*5, 8, 0, Math.PI*2);
+            ctx.fill();
+            // Right fist
+            ctx.beginPath();
+            ctx.arc(bodyW/2 + 5, bodyH/2 - Math.sin(Date.now()/100)*5, 8, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.restore();
+
+            // 2. Draw BIG HEAD (The cropped image)
+            ctx.save();
+            ctx.translate(x, y);
+            // Add slight wobble to head
+            const wobble = Math.sin(Date.now() / 300) * 0.1;
+            ctx.rotate(wobble);
+
+            ctx.beginPath();
+            ctx.arc(0, 0, headSize, 0, Math.PI*2);
+            ctx.closePath();
+            
+            // Shadow behind head
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 10;
+            
+            ctx.save();
+            ctx.clip(); // Clip strictly to circle
+            ctx.drawImage(img, -headSize, -headSize, headSize*2, headSize*2);
+            ctx.restore(); // Restore clip
+            
+            // Border
+            ctx.strokeStyle = isHero ? '#60a5fa' : '#f87171';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function gameLoop() {
+            if(!state.game.active) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Spawning
+            const now = Date.now();
+            if (now - state.game.lastSpawn > state.game.spawnRate) {
+                spawnEnemy();
+                state.game.lastSpawn = now;
+                state.game.spawnRate = Math.max(500, state.game.spawnRate - 20);
+                state.game.difficulty += 0.05;
+            }
+
+            // 1. Draw Hero (Always in Center)
+            const heroImg = new Image();
+            heroImg.src = state.hero.imgData;
+            if(state.hero.imgData) {
+                drawCaricature(ctx, canvas.width/2, canvas.height/2, heroImg, true);
+            }
+
+            // 2. Process Enemies
+            state.game.entities.forEach((en, i) => {
+                // Move towards center
+                const dx = (canvas.width/2) - en.x;
+                const dy = (canvas.height/2) - en.y;
+                const angle = Math.atan2(dy, dx);
+                
+                en.x += Math.cos(angle) * en.speed;
+                en.y += Math.sin(angle) * en.speed;
+
+                // Draw Enemy Caricature
+                const enImg = new Image();
+                enImg.src = en.imgData;
+                drawCaricature(ctx, en.x, en.y, enImg, false);
+
+                // Collision with Hero (Game Over condition logic)
+                const dist = Math.hypot(dx, dy);
+                if (dist < 80) { // Touch radius
+                    takeDamage(10);
+                    killEnemy(i, false); // Remove enemy, no score
+                    createExplosion(en.x, en.y, "#ef4444");
+                }
+            });
+
+            // 3. Process Particles
+            for (let i = state.game.particles.length - 1; i >= 0; i--) {
+                const p = state.game.particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.05;
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = Math.max(0, p.life);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+                ctx.fill();
+                if (p.life <= 0) state.game.particles.splice(i, 1);
+            }
+            ctx.globalAlpha = 1;
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function spawnEnemy() {
+            // Pick random side
+            const side = Math.floor(Math.random() * 4);
+            let x, y;
+            const pad = 60;
+            if (side === 0) { x = Math.random() * canvas.width; y = -pad; } // Top
+            else if (side === 1) { x = canvas.width + pad; y = Math.random() * canvas.height; } // Right
+            else if (side === 2) { x = Math.random() * canvas.width; y = canvas.height + pad; } // Bottom
+            else { x = -pad; y = Math.random() * canvas.height; } // Left
+
+            // Pick random enemy data
+            const data = state.enemiesList[Math.floor(Math.random() * state.enemiesList.length)];
+
+            state.game.entities.push({
+                x, y,
+                imgData: data.imgData,
+                speed: (Math.random() * 1 + 0.5) * state.game.difficulty
+            });
+        }
+
+        // --- Interaction (Tap to fight) ---
+        canvas.addEventListener('mousedown', handleTap);
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); 
+            for(let i=0; i<e.changedTouches.length; i++) handleTap(e.changedTouches[i]);
+        }, {passive:false});
+
+        function handleTap(e) {
+            if (!state.game.active) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const tx = (e.clientX || e.pageX) - rect.left;
+            const ty = (e.clientY || e.pageY) - rect.top;
+
+            // Check hits
+            let hit = false;
+            for (let i = state.game.entities.length - 1; i >= 0; i--) {
+                const en = state.game.entities[i];
+                // Hitbox is the head radius roughly (40px) + padding
+                if (Math.hypot(en.x - tx, en.y - ty) < 60) {
+                    killEnemy(i, true);
+                    hit = true;
+                    createExplosion(tx, ty, "#fff"); // Hit spark
+                    playSound('punch');
+                    break; // One tap = one kill
+                }
+            }
+
+            if (!hit) {
+                // Miss effect
+                createExplosion(tx, ty, "rgba(255,255,255,0.1)");
+            }
+        }
+
+        function killEnemy(index, byPlayer) {
+            const en = state.game.entities[index];
+            state.game.entities.splice(index, 1);
+            
+            if (byPlayer) {
+                state.game.score += 100;
+                document.getElementById('score-display').innerText = state.game.score;
+                showFloatText("POW!", en.x, en.y);
+            }
+        }
+
+        function takeDamage(amt) {
+            state.game.health -= amt;
+            updateHealthUI();
+            
+            // Screen shake/flash
+            const red = document.createElement('div');
+            red.className = "absolute inset-0 bg-red-600 opacity-40 pointer-events-none";
+            document.body.appendChild(red);
+            setTimeout(() => red.remove(), 100);
+            
+            playSound('hit');
+
+            if (state.game.health <= 0) {
+                gameOver();
+            }
+        }
+
+        function updateHealthUI() {
+            const bar = document.getElementById('health-bar');
+            bar.style.width = state.game.health + '%';
+            bar.className = state.game.health < 30 ? "h-full bg-red-600 pulse-red" : "h-full bg-green-500";
+        }
+
+        function gameOver() {
+            state.game.active = false;
+            document.getElementById('game-ui').classList.add('hidden');
+            document.getElementById('screen-gameover').classList.remove('hidden');
+            document.getElementById('final-score').innerText = state.game.score;
+            document.getElementById('final-enemies').innerText = Math.floor(state.game.score / 100);
+            playSound('gameover');
+        }
+
+        // FX
+        function createExplosion(x, y, color) {
+            for(let i=0; i<8; i++) {
+                state.game.particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    life: 1,
+                    size: Math.random()*5+2,
+                    color
+                });
+            }
+        }
+
+        function showFloatText(txt, x, y) {
+            const el = document.createElement('div');
+            el.className = "absolute text-4xl font-bold text-yellow-300 game-font pointer-events-none";
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            el.style.textShadow = "2px 2px 0 #000";
+            el.innerText = txt;
+            el.style.transition = "transform 0.5s, opacity 0.5s";
+            document.body.appendChild(el);
+            
+            requestAnimationFrame(() => {
+                el.style.transform = "translate(-50%, -100px) scale(1.5)";
+                el.style.opacity = "0";
+            });
+            setTimeout(() => el.remove(), 500);
+        }
+
+        // Simple Synth
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+        function playSound(type) {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            const now = audioCtx.currentTime;
+            
+            if (type === 'punch') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(200, now);
+                osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+                gain.gain.setValueAtTime(0.5, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } else if (type === 'hit') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(100, now);
+                osc.frequency.linearRampToValueAtTime(50, now + 0.2);
+                gain.gain.setValueAtTime(0.5, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.2);
+                osc.start(now);
+                osc.stop(now + 0.2);
+            } else if (type === 'gameover') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(100, now + 1);
+                gain.gain.setValueAtTime(0.5, now);
+                gain.gain.linearRampToValueAtTime(0, now + 1);
+                osc.start(now);
+                osc.stop(now + 1);
+            }
+        }
+    </script>
+</body>
+</html>
